@@ -20,44 +20,40 @@ import timm
 
 class AttentionPool(nn.Module):
     """
-    一个简单的空间注意力池化层。
-    
-    输入: [B, C, H, W] (例如 [16, 1280, 8, 8])
-    输出: [B, C] (例如 [16, 1280])
+    (已更新为使用 Temperature Scaling)
     """
-    def __init__(self, in_dim):
+    def __init__(self, in_dim, temperature=2.0): # <-- 1. 添加 temperature
         super(AttentionPool, self).__init__()
-        
-        # 这个 1x1 卷积会学习一个“重要性”图
-        # 它将 C 个通道压缩为 1 个通道的“注意力图”
         self.conv = nn.Conv2d(in_dim, 1, kernel_size=1)
-        self.flatten = nn.Flatten(start_dim=2) # 展平 H, W
-        self.softmax = nn.Softmax(dim=2) # 在 H*W 维度上 Softmax
+        self.flatten = nn.Flatten(start_dim=2) 
+        
+        self.temperature = temperature # <-- 2. 存储 T
+
+        # [修改] 我们将在 forward 中应用 T，所以这里移除 softmax
+        # self.softmax = nn.Softmax(dim=2) 
 
     def forward(self, x):
         # x shape: [B, C, H, W]
         
         # 1. 生成注意力图
-        # attn_map shape: [B, 1, H, W]
-        attn_map = self.conv(x)
+        attn_map = self.conv(x) # [B, 1, H, W]
         
-        # 2. 展平并 Softmax
-        # flat_map shape: [B, 1, H*W]
-        flat_map = self.flatten(attn_map)
-        # attn_weights shape: [B, 1, H*W] (所有 H*W 位置的权重和为 1)
-        attn_weights = self.softmax(flat_map)
+        # 2. 展平
+        flat_map = self.flatten(attn_map) # [B, 1, H*W]
         
-        # 3. 展平原始特征
-        # x_flat shape: [B, C, H*W]
-        x_flat = self.flatten(x)
+        # 3. [修改] 应用 Temperature 并进行 Softmax
+        #    T > 1.0 会“软化”分布，迫使模型关注更广泛的区域
+        #    T = 1.0 等同于标准 softmax
+        attn_weights = F.softmax(flat_map / self.temperature, dim=2) # [B, 1, H*W]
         
-        # 4. 加权求和
-        # ( [B, C, H*W] * [B, 1, H*W] ) -> 广播乘法
-        # torch.sum(dim=2) -> 在 H*W 维度上求和
-        # final_features shape: [B, C]
-        final_features = torch.sum(x_flat * attn_weights, dim=2)
+        # 4. 展平原始特征
+        x_flat = self.flatten(x) # [B, C, H*W]
+        
+        # 5. 加权求和
+        final_features = torch.sum(x_flat * attn_weights, dim=2) # [B, C]
         
         return final_features
+    
 
 class TeacherModel(nn.Module):
     """
@@ -82,10 +78,9 @@ class TeacherModel(nn.Module):
         
         # [新] 图像投影层 (来自我们上一步的讨论，保持不变)
         self.img_projector = nn.Sequential(
-            nn.Linear(self.num_img_features, 256),
-            nn.ReLU(),
-            nn.BatchNorm1d(256),
-            nn.Linear(256, 128) # 投影到 128 维
+            nn.Linear(self.num_img_features, 128),
+            nn.BatchNorm1d(128),
+            nn.ReLU()
         )
         
         # --- 2. 表格分支 (Table Branch) ---
