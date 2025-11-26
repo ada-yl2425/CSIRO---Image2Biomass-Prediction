@@ -18,78 +18,70 @@ import torch.nn as nn
 import timm # PyTorch Image Models (需要: pip install timm)
 
 class TeacherModel(nn.Module):
-    """
-    Multi-modal Fusion Model (Images + Tabels)
-
-    Args:
-        num_states (int): "State" 特征的唯一类别数
-        num_species (int): "Species" 特征的唯一类别数
-        img_model_name (str): 使用的 timm 图像模型
-    """
     def __init__(self, num_states, num_species, img_model_name='efficientnet_b1'):
         super(TeacherModel, self).__init__()
 
         # --- 1. 图像分支 (Image Branch) ---
-        # 加载预训练模型，不包括最后的分类器 (num_classes=0)
-        # GlobalAveragePooling 会被自动应用
         self.img_backbone = timm.create_model(
-            img_model_name,
-            pretrained=True,
-            num_classes=0
+            img_model_name, pretrained=True, num_classes=0
         )
-
-        # 获取图像模型的输出特征维度
         self.num_img_features = self.img_backbone.num_features
 
+        # [新] 添加一个可训练的图像投影层
+        # (1280 -> 128)
+        # 这个层是可训练的, 它学会如何从1280个特征中“提取”有用的信息
+        self.img_projector = nn.Sequential(
+            nn.Linear(self.num_img_features, 256),
+            nn.ReLU(),
+            nn.BatchNorm1d(256),
+            nn.Linear(256, 128) # 最终投影到 128 维
+        )
+        
         # --- 2. 表格分支 (Table Branch) ---
-
-        # 数值特征 (Pre_GSHH_NDVI, Height_Ave_cm, month_sin, month_cos)
-        self.num_numeric_features = 4
-
-        # 类别特征的 Embedding 层
-        self.state_embed_dim = 8  # 超参数
-        self.species_embed_dim = 16 # 超参数
-
+        # ... (表格 Embedding 定义不变) ...
+        self.state_embed_dim = 8
+        self.species_embed_dim = 16 
         self.state_embedding = nn.Embedding(num_states, self.state_embed_dim)
         self.species_embedding = nn.Embedding(num_species, self.species_embed_dim)
-
-        # 表格分支 MLP
+        self.num_numeric_features = 4
         self.tab_input_dim = (
             self.num_numeric_features + self.state_embed_dim + self.species_embed_dim
         )
-
+        
+        # ... (表格 MLP 定义不变) ...
         self.tab_mlp = nn.Sequential(
             nn.Linear(self.tab_input_dim, 64),
             nn.ReLU(),
             nn.BatchNorm1d(64),
-            nn.Dropout(0.3),
+            nn.Dropout(0.5), # 保持 0.5
             nn.Linear(64, 128),
         )
 
         # --- 3. 融合头 (Fusion Head) ---
-        self.fusion_input_dim = self.num_img_features + 128 # 128 来自 tab_mlp
+        
+        # [改] 新的融合维度
+        # (128 来自 img_projector) + (128 来自 tab_mlp)
+        self.fusion_input_dim = 128 + 128 # = 256
 
         self.fusion_head = nn.Sequential(
-            nn.Linear(self.fusion_input_dim, 128), # <-- 从 256 降到 128
+            # [改] 输入维度现在是 256
+            nn.Linear(self.fusion_input_dim, 256),
             nn.ReLU(),
-            nn.BatchNorm1d(128),
-            nn.Dropout(0.5), # <-- 也许使用 0.5 (配合建议1)
-            nn.Linear(128, 64),  # <-- 从 128 降到 64
+            nn.BatchNorm1d(256),
+            nn.Dropout(0.5), # 保持 0.5
+            nn.Linear(256, 128),
             nn.ReLU(),
-            nn.Linear(64, 5) # <-- 从 128 改为 64
+            nn.Linear(128, 5) # 最终输出5个值
         )
 
-        # ** 冻结图像主干的大部分层 **
-        # 这是在小数据集上训练的关键
+        # --- 冻结 ... (冻结逻辑保持不变) ---
         for param in self.img_backbone.parameters():
             param.requires_grad = False
-
-        # 仅解冻最后几个 block (例如 EfficientNet-B1 的最后1个)
-        # 您可以根据需要调整解冻的层数
+        
+        # 保持 Run 2 的设置: 只解冻最后一个 block
         for param in self.img_backbone.blocks[-1:].parameters():
             param.requires_grad = True
 
-        # 解冻主干的 BatchNorm (如果存在) 和头部
         if hasattr(self.img_backbone, 'conv_head'):
             for param in self.img_backbone.conv_head.parameters():
                  param.requires_grad = True
@@ -106,30 +98,25 @@ class TeacherModel(nn.Module):
         """
 
         # 1. 处理图像
-        # self.img_backbone(image) 的输出已经是 [batch_size, num_img_features]
-        # 因为 timm 自动应用了 GlobalAveragePooling
-        img_features = self.img_backbone(image)
+        img_features = self.img_backbone(image) # [B, 1280]
+        
+        # [新] 将图像特征投影到 128 维
+        img_features_projected = self.img_projector(img_features) # [B, 128]
 
         # 2. 处理表格
-        # 提取类别数据
+        # ... (表格处理) ...
         state_idx = categorical_data[:, 0]
         species_idx = categorical_data[:, 1]
-
-        # 获取 Embeddings
         state_emb = self.state_embedding(state_idx)
         species_emb = self.species_embedding(species_idx)
-
-        # 拼接所有表格特征
         tab_data = torch.cat([numeric_data, state_emb, species_emb], dim=1)
-
-        # 通过 MLP
-        tab_features = self.tab_mlp(tab_data)
+        
+        tab_features = self.tab_mlp(tab_data) # [B, 128]
 
         # 3. 融合
-        fused_features = torch.cat([img_features, tab_features], dim=1)
+        # [改] 融合两个 128 维的向量
+        fused_features = torch.cat([img_features_projected, tab_features], dim=1) # [B, 256]
 
         # 4. 预测
-        # 最终激活函数为 'linear' (即无激活), 因为是回归任务
-        output = self.fusion_head(fused_features)
-
+        output = self.fusion_head(fused_features) # 融合头现在接收 [B, 256]
         return output
