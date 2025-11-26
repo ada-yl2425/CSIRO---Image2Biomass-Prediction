@@ -70,13 +70,13 @@ class TeacherModel(nn.Module):
         self.fusion_input_dim = self.num_img_features + 128 # 128 来自 tab_mlp
 
         self.fusion_head = nn.Sequential(
-            nn.Linear(self.fusion_input_dim, 256),
+            nn.Linear(self.fusion_input_dim, 128), # <-- 从 256 降到 128
             nn.ReLU(),
-            nn.BatchNorm1d(256),
-            nn.Dropout(0.5),
-            nn.Linear(256, 128),
+            nn.BatchNorm1d(128),
+            nn.Dropout(0.5), # <-- 也许使用 0.5 (配合建议1)
+            nn.Linear(128, 64),  # <-- 从 128 降到 64
             nn.ReLU(),
-            nn.Linear(128, 5) # 最终输出5个值
+            nn.Linear(64, 5) # <-- 从 128 改为 64
         )
 
         # ** 冻结图像主干的大部分层 **
