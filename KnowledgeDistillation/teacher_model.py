@@ -84,9 +84,9 @@ class TeacherModel(nn.Module):
         for param in self.img_backbone.parameters():
             param.requires_grad = False
 
-        # 仅解冻最后几个 block (例如 EfficientNet-B1 的最后2个)
+        # 仅解冻最后几个 block (例如 EfficientNet-B1 的最后1个)
         # 您可以根据需要调整解冻的层数
-        for param in self.img_backbone.blocks[-2:].parameters():
+        for param in self.img_backbone.blocks[-1:].parameters():
             param.requires_grad = True
 
         # 解冻主干的 BatchNorm (如果存在) 和头部
