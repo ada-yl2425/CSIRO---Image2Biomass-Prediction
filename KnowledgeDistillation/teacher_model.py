@@ -62,7 +62,7 @@ class TeacherModel(nn.Module):
             nn.Linear(self.tab_input_dim, 64),
             nn.ReLU(),
             nn.BatchNorm1d(64),
-            nn.Dropout(0.3),
+            nn.Dropout(0.5),
             nn.Linear(64, 128),
         )
 
@@ -73,7 +73,7 @@ class TeacherModel(nn.Module):
             nn.Linear(self.fusion_input_dim, 256),
             nn.ReLU(),
             nn.BatchNorm1d(256),
-            nn.Dropout(0.5),
+            nn.Dropout(0.7),
             nn.Linear(256, 128),
             nn.ReLU(),
             nn.Linear(128, 5) # 最终输出5个值
