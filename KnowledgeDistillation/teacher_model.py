@@ -93,12 +93,13 @@ class TeacherModel(nn.Module):
         self.tab_input_dim = (
             self.num_numeric_features + self.state_embed_dim + self.species_embed_dim
         )
+        # [新架构] 增强的表格 MLP (Input -> 128 -> 128)
         self.tab_mlp = nn.Sequential(
-            nn.Linear(self.tab_input_dim, 64),
+            nn.Linear(self.tab_input_dim, 128),  # <-- 更改
             nn.ReLU(),
-            nn.BatchNorm1d(64),
+            nn.BatchNorm1d(128),                 # <-- 更改
             nn.Dropout(0.5), 
-            nn.Linear(64, 128),
+            nn.Linear(128, 128)                  # <-- 更改
         )
 
         # --- 3. 融合头 (Fusion Head) ---
@@ -114,21 +115,25 @@ class TeacherModel(nn.Module):
             nn.Linear(128, 5)
         )
 
-        # --- 冻结 ... (冻结逻辑保持不变) ---
+        # --- [关键修改] 冻结 ---
+        
+        # 1. 彻底冻结所有主干层 (这行保留)
         for param in self.img_backbone.parameters():
             param.requires_grad = False
-        
-        # 只解冻最后一个 block (来自 Run 2)
-        for param in self.img_backbone.blocks[-1:].parameters():
-            param.requires_grad = True
+            
+        # 2. [删除] 我们不再解冻任何 block
+        # for param in self.img_backbone.blocks[-1:].parameters():
+        #     param.requires_grad = True
 
-        # (解冻 conv_head 和 bn2 的代码保持不变)
-        if hasattr(self.img_backbone, 'conv_head'):
-             for param in self.img_backbone.conv_head.parameters():
-                  param.requires_grad = True
-        if hasattr(self.img_backbone, 'bn2'):
-             for param in self.img_backbone.bn2.parameters():
-                  param.requires_grad = True
+        # 3. [删除] 我们也不再解冻 conv_head
+        # if hasattr(self.img_backbone, 'conv_head'):
+        #      for param in self.img_backbone.conv_head.parameters():
+        #           param.requires_grad = True
+        
+        # 4. [删除] 我们也不再解冻 bn2
+        # if hasattr(self.img_backbone, 'bn2'):
+        #      for param in self.img_backbone.bn2.parameters():
+        #           param.requires_grad = True
 
     def forward(self, image, numeric_data, categorical_data):
         
