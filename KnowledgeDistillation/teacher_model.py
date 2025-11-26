@@ -72,9 +72,9 @@ class TeacherModel(nn.Module):
             global_pool=''  # <--- 移除 GAP，获得 [B, C, H, W]
         )
         self.num_img_features = self.img_backbone.num_features # 1280
-
+        
         # [新] 使用我们自定义的 AttentionPool
-        self.img_pool = AttentionPool(in_dim=self.num_img_features)
+        self.img_pool = AttentionPool(in_dim=self.num_img_features, temperature=2.0)
         
         # [新] 图像投影层 (来自我们上一步的讨论，保持不变)
         self.img_projector = nn.Sequential(
