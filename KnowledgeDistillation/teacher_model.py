@@ -116,24 +116,26 @@ class TeacherModel(nn.Module):
         )
 
         # --- [关键修改] 冻结 ---
-        
         # 1. 彻底冻结所有主干层 (这行保留)
         for param in self.img_backbone.parameters():
             param.requires_grad = False
             
-        # 2. [删除] 我们不再解冻任何 block
-        # for param in self.img_backbone.blocks[-1:].parameters():
-        #     param.requires_grad = True
+        # 2. [RE-ADD] 解冻最后一个 block
+        #    This allows the model to fine-tune the final, 
+        #    most task-specific layers of the image backbone.
+        for param in self.img_backbone.blocks[-1:].parameters():
+            param.requires_grad = True
 
-        # 3. [删除] 我们也不再解冻 conv_head
-        # if hasattr(self.img_backbone, 'conv_head'):
-        #      for param in self.img_backbone.conv_head.parameters():
-        #           param.requires_grad = True
+        # 3. [RE-ADD] 解冻
+        #    (These are paired with the final block)
+        if hasattr(self.img_backbone, 'conv_head'):
+             for param in self.img_backbone.conv_head.parameters():
+                  param.requires_grad = True
         
-        # 4. [删除] 我们也不再解冻 bn2
-        # if hasattr(self.img_backbone, 'bn2'):
-        #      for param in self.img_backbone.bn2.parameters():
-        #           param.requires_grad = True
+        # 4. [RE-ADD] 解冻
+        if hasattr(self.img_backbone, 'bn2'):
+             for param in self.img_backbone.bn2.parameters():
+                  param.requires_grad = True
 
     def forward(self, image, numeric_data, categorical_data):
         
