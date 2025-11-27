@@ -11,10 +11,10 @@ class TeacherModel(nn.Module):
     """
     Multi-modal Fusion Model (已更新为使用 Cross-Attention)
     """
-    def __init__(self, num_states, num_species, img_model_name='efficientnet_b1'):
+    def __init__(self, num_states, num_species, img_model_name='efficientnet_b2'):
         super(TeacherModel, self).__init__()
         
-        self.img_model_dim = 1280  # EfficientNet-B1 的特征维度
+        self.img_model_dim = 1408  # EfficientNet-B2 的特征维度
         self.tab_model_dim = 128   # 表格分支的输出维度
         self.num_heads = 4         # 交叉注意力的头数
 
@@ -25,10 +25,9 @@ class TeacherModel(nn.Module):
             num_classes=0,
             global_pool=''  # 移除 GAP
         )
-        # self.num_img_features = 1280 (已在上面定义)
-        
-        # [新] Key/Value 投影层
-        # 将 1280 维的图像特征投影到与表格分支匹配的 128 维
+        # [修改 3] (动态变化，自动适应)
+        # 这一行会自动使用 self.img_model_dim (1408)
+        # 所以它不需要改动，但它的输入维度已经变了
         self.img_kv_projector = nn.Linear(self.img_model_dim, self.tab_model_dim)
         
         # --- 2. 表格分支 (Table Branch) ---
