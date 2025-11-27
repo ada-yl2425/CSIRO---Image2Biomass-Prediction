@@ -1,4 +1,6 @@
 # KnowledgeDistillation/loss.py
+
+# ... (保留您文件顶部的 WeightedMSELoss) ...
 import torch
 import torch.nn as nn
 
@@ -17,14 +19,13 @@ class WeightedMSELoss(nn.Module):
         y_true: (log scale), shape [batch_size, 5]
         """
         weights = self.weights.to(y_pred.device)
-
         squared_errors = (y_pred - y_true) ** 2
-
-        # (broadcasts weights from [5] to [batch_size, 5])
         weighted_squared_errors = weights * squared_errors
-
         return torch.mean(weighted_squared_errors)
 
+# -----------------------------------------------------------------
+# --- [已修正] KNOWLEDGE DISTILLATION LOSS ---
+# -----------------------------------------------------------------
 class StudentLoss(nn.Module):
     """
     知识蒸馏损失 (Knowledge Distillation Loss)
@@ -37,12 +38,9 @@ class StudentLoss(nn.Module):
         Args:
             alpha (float): 平衡因子。
                            Loss = (alpha * Hard_Loss) + ((1 - alpha) * Soft_Loss)
-                           
-                           一个较小的 alpha (例如 0.1) 意味着
-                           模型将 90% 的注意力用于模仿 Teacher，
-                           10% 的注意力用于匹配真实标签。
         """
-        super(StudentLoss, self.__init__()
+        super().__init__()  # <-- [修正] 使用了更简洁的 Python 3 super()
+        
         self.alpha = alpha
         
         # 我们对两个损失使用相同的加权 MSE
