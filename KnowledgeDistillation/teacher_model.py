@@ -1,90 +1,37 @@
-"""teacher_model.ipynb
-## 多模态架构：
-
-1. Image Branch: 使用一个轻量级的预训练模型（EfficientNet-B1），并冻结大部分层。对于小数据，B1 比 B3/B4 更安全。保留GlobalAveragePooling
-
-2. Table Branch:
-
- * 分类特征 (State_encoded, Species_encoded): 使用 Embedding Layers。这是处理LabelEncoder输出的正确方式，它比独热编码更节省参数，并且能学到类别间的语义关系。
-
- * 数值特征 (Pre_GSHH_NDVI, Height_Ave_cm, month_sin, month_cos): 直接输入。
-
-3. Fusion: 将两个分支的输出Concatenate，并通过MLP来得到最终的5个值。
-"""
-
 # KnowledgeDistillation/teacher_model.py
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import timm
 
-class AttentionPool(nn.Module):
-    """
-    (已更新为使用 Temperature Scaling)
-    """
-    def __init__(self, in_dim, temperature=2.0): # <-- 1. 添加 temperature
-        super(AttentionPool, self).__init__()
-        self.conv = nn.Conv2d(in_dim, 1, kernel_size=1)
-        self.flatten = nn.Flatten(start_dim=2) 
-        
-        self.temperature = temperature # <-- 2. 存储 T
-
-        # [修改] 我们将在 forward 中应用 T，所以这里移除 softmax
-        # self.softmax = nn.Softmax(dim=2) 
-
-    def forward(self, x):
-        # x shape: [B, C, H, W]
-        
-        # 1. 生成注意力图
-        attn_map = self.conv(x) # [B, 1, H, W]
-        
-        # 2. 展平
-        flat_map = self.flatten(attn_map) # [B, 1, H*W]
-        
-        # 3. [修改] 应用 Temperature 并进行 Softmax
-        #    T > 1.0 会“软化”分布，迫使模型关注更广泛的区域
-        #    T = 1.0 等同于标准 softmax
-        attn_weights = F.softmax(flat_map / self.temperature, dim=2) # [B, 1, H*W]
-        
-        # 4. 展平原始特征
-        x_flat = self.flatten(x) # [B, C, H*W]
-        
-        # 5. 加权求和
-        final_features = torch.sum(x_flat * attn_weights, dim=2) # [B, C]
-        
-        return final_features
-    
+# 移除了 AttentionPool，因为我们将使用 nn.MultiheadAttention
+# class AttentionPool(nn.Module): ...
 
 class TeacherModel(nn.Module):
     """
-    Multi-modal Fusion Model (已更新为使用 Attention Pooling)
+    Multi-modal Fusion Model (已更新为使用 Cross-Attention)
     """
     def __init__(self, num_states, num_species, img_model_name='efficientnet_b1'):
         super(TeacherModel, self).__init__()
+        
+        self.img_model_dim = 1280  # EfficientNet-B1 的特征维度
+        self.tab_model_dim = 128   # 表格分支的输出维度
+        self.num_heads = 4         # 交叉注意力的头数
 
         # --- 1. 图像分支 (Image Branch) ---
-        
-        # [关键修改] global_pool='' 移除了自动的 GAP
         self.img_backbone = timm.create_model(
             img_model_name,
             pretrained=True,
             num_classes=0,
-            global_pool=''  # <--- 移除 GAP，获得 [B, C, H, W]
+            global_pool=''  # 移除 GAP
         )
-        self.num_img_features = self.img_backbone.num_features # 1280
+        # self.num_img_features = 1280 (已在上面定义)
         
-        # [新] 使用我们自定义的 AttentionPool
-        self.img_pool = AttentionPool(in_dim=self.num_img_features, temperature=2.0)
-        
-        # [新] 图像投影层 (来自我们上一步的讨论，保持不变)
-        self.img_projector = nn.Sequential(
-            nn.Linear(self.num_img_features, 128),
-            nn.BatchNorm1d(128),
-            nn.ReLU()
-        )
+        # [新] Key/Value 投影层
+        # 将 1280 维的图像特征投影到与表格分支匹配的 128 维
+        self.img_kv_projector = nn.Linear(self.img_model_dim, self.tab_model_dim)
         
         # --- 2. 表格分支 (Table Branch) ---
-        # ... (这部分完全不变) ...
         self.num_numeric_features = 4
         self.state_embed_dim = 8
         self.species_embed_dim = 16
@@ -93,18 +40,35 @@ class TeacherModel(nn.Module):
         self.tab_input_dim = (
             self.num_numeric_features + self.state_embed_dim + self.species_embed_dim
         )
-        # [新架构] 增强的表格 MLP (Input -> 128 -> 128)
+        
+        # 保持增强的表格 MLP
         self.tab_mlp = nn.Sequential(
-            nn.Linear(self.tab_input_dim, 128),  # <-- 更改
+            nn.Linear(self.tab_input_dim, 128),
             nn.ReLU(),
-            nn.BatchNorm1d(128),                 # <-- 更改
+            nn.BatchNorm1d(128),
             nn.Dropout(0.5), 
-            nn.Linear(128, 128)                  # <-- 更改
+            nn.Linear(128, self.tab_model_dim) # 输出 128 维
         )
 
-        # --- 3. 融合头 (Fusion Head) ---
-        # ... (这部分完全不变, 依然是 128 + 128) ...
-        self.fusion_input_dim = 128 + 128 # = 256
+        # --- 3. 融合机制 (Cross-Attention) ---
+        
+        # [新] Query 投影层 (可选，但推荐)
+        self.tab_q_projector = nn.Linear(self.tab_model_dim, self.tab_model_dim)
+        
+        # [新] 交叉注意力模块
+        self.cross_attn = nn.MultiheadAttention(
+            embed_dim=self.tab_model_dim, # 128
+            num_heads=self.num_heads,
+            batch_first=True  # 接受 [Batch, Seq, Features] 格式
+        )
+        
+        # 归一化层
+        self.attn_norm = nn.LayerNorm(self.tab_model_dim)
+
+        # --- 4. 最终预测头 (Final Head) ---
+        # 融合“表格原始信息”和“被表格过滤后的图像信息”
+        self.fusion_input_dim = self.tab_model_dim + self.tab_model_dim # 128 + 128 = 256
+        
         self.fusion_head = nn.Sequential(
             nn.Linear(self.fusion_input_dim, 256),
             nn.ReLU(),
@@ -115,53 +79,68 @@ class TeacherModel(nn.Module):
             nn.Linear(128, 5)
         )
 
-        # --- [关键修改] 冻结 ---
-        # 1. 彻底冻结所有主干层 (这行保留)
+        # --- 冻结 ---
+        # 1. 彻底冻结主干
         for param in self.img_backbone.parameters():
             param.requires_grad = False
             
-        # 2. [RE-ADD] 解冻最后一个 block
-        #    This allows the model to fine-tune the final, 
-        #    most task-specific layers of the image backbone.
+        # 2. [保持] 解冻最后一个 block
         for param in self.img_backbone.blocks[-1:].parameters():
             param.requires_grad = True
 
-        # 3. [RE-ADD] 解冻
-        #    (These are paired with the final block)
+        # 3. [保持] 解冻 conv_head 和 bn2
         if hasattr(self.img_backbone, 'conv_head'):
              for param in self.img_backbone.conv_head.parameters():
                   param.requires_grad = True
-        
-        # 4. [RE-ADD] 解冻
         if hasattr(self.img_backbone, 'bn2'):
              for param in self.img_backbone.bn2.parameters():
                   param.requires_grad = True
 
     def forward(self, image, numeric_data, categorical_data):
         
-        # 1. 处理图像
-        # x shape: [B, 1280, H, W] (例如 [16, 1280, 8, 8])
-        x = self.img_backbone(image)
-        
-        # [新] 应用注意力池化
-        # img_features shape: [B, 1280]
-        img_features = self.img_pool(x)
-        
-        # [改] 投影池化后的特征
-        img_features_projected = self.img_projector(img_features) # [B, 128]
-
-        # 2. 处理表格 (不变)
+        # 1. 处理表格 (生成 Query)
         state_idx = categorical_data[:, 0]
         species_idx = categorical_data[:, 1]
         state_emb = self.state_embedding(state_idx)
         species_emb = self.species_embedding(species_idx)
         tab_data = torch.cat([numeric_data, state_emb, species_emb], dim=1)
-        tab_features = self.tab_mlp(tab_data) # [B, 128]
+        
+        # tab_features shape: [B, 128]
+        tab_features = self.tab_mlp(tab_data)
+        
+        # Q shape: [B, 1, 128] (1 代表“一个问题”)
+        query = self.tab_q_projector(tab_features).unsqueeze(1) 
 
-        # 3. 融合 (不变)
-        fused_features = torch.cat([img_features_projected, tab_features], dim=1) # [B, 256]
+        # 2. 处理图像 (生成 Key 和 Value)
+        # x_map shape: [B, 1280, H, W] (例如 [B, 1280, 8, 8])
+        x_map = self.img_backbone(image)
+        
+        B, C, H, W = x_map.shape
+        
+        # x_patches shape: [B, H*W, C] (例如 [B, 64, 1280])
+        x_patches = x_map.flatten(2).permute(0, 2, 1) 
+        
+        # K/V shape: [B, 64, 128] (投影到 128 维)
+        key_value = self.img_kv_projector(x_patches)
+        
+        # 3. 执行交叉注意力
+        # Q = [B, 1, 128] (来自表格)
+        # K = [B, 64, 128] (来自图像)
+        # V = [B, 64, 128] (来自图像)
+        # attn_output shape: [B, 1, 128]
+        attn_output, _ = self.cross_attn(
+            query=query, 
+            key=key_value, 
+            value=key_value
+        )
+        
+        # attended_img_features shape: [B, 128]
+        attended_img_features = self.attn_norm(attn_output.squeeze(1))
 
-        # 4. 预测 (不变)
+        # 4. 融合与预测
+        # [B, 128] (表格信息) + [B, 128] (表格"看到"的图像信息)
+        fused_features = torch.cat([tab_features, attended_img_features], dim=1) # [B, 256]
+        
         output = self.fusion_head(fused_features)
         
         return output
