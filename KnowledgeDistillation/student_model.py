@@ -7,7 +7,7 @@ import timm
 class StudentModel(nn.Module):
     """
     纯图像到生物量的学生模型 (Student Model)
-    (已更新为使用完整的 2 层 Transformer 解码器)
+    (已更新为使用完整的 3 层 Transformer 解码器)
     """
     def __init__(self, img_model_name='efficientnet_b2'):
         super(StudentModel, self).__init__()
@@ -44,7 +44,7 @@ class StudentModel(nn.Module):
         )
         self.transformer_decoder = nn.TransformerDecoder(
             decoder_layer, 
-            num_layers=2  # [新] 我们堆叠了 2 层
+            num_layers=3  # [新] 我们堆叠了 3 层
         )
 
         # --- 2. 预测头 (Prediction Head) ---
