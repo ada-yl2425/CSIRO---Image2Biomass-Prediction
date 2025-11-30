@@ -1,6 +1,5 @@
 # KnowledgeDistillation/loss.py
 
-# ... (保留您文件顶部的 WeightedMSELoss) ...
 import torch
 import torch.nn as nn
 
@@ -23,39 +22,35 @@ class WeightedMSELoss(nn.Module):
         weighted_squared_errors = weights * squared_errors
         return torch.mean(weighted_squared_errors)
 
-# -----------------------------------------------------------------
-# --- [已修正] KNOWLEDGE DISTILLATION LOSS ---
-# -----------------------------------------------------------------
-class StudentLoss(nn.Module):
-    """
-    知识蒸馏损失 (Knowledge Distillation Loss)
+
+def calculate_weighted_r2(y_true, y_pred, device):
+    y_true = y_true.to(device)
+    y_pred = y_pred.to(device)
     
-    它将 "Hard Loss" (Student vs. Ground Truth) 和 
-    "Soft Loss" (Student vs. Teacher) 结合起来。
-    """
+    weights = torch.tensor([0.1, 0.1, 0.1, 0.2, 0.5], dtype=torch.float32).to(device)
+    ss_res = torch.sum(weights * (y_true - y_pred) ** 2)
+    sum_weighted_values = torch.sum(weights * y_true)
+    weights_broadcasted = weights.expand_as(y_true)
+    sum_of_all_weights = torch.sum(weights_broadcasted)
+    y_mean_w = sum_weighted_values / (sum_of_all_weights + 1e-6)
+    
+    ss_tot = torch.sum(weights * (y_true - y_mean_w) ** 2)
+    
+    r2 = 1.0 - (ss_res / (ss_tot + 1e-6)) 
+    
+    return r2.item()
+
+
+class StudentLoss(nn.Module):
     def __init__(self, alpha=0.1):
-        """
-        Args:
-            alpha (float): 平衡因子。
-                           Loss = (alpha * Hard_Loss) + ((1 - alpha) * Soft_Loss)
-        """
-        super().__init__()  # <-- [修正] 使用了更简洁的 Python 3 super()
+
+        super().__init__() 
         
         self.alpha = alpha
         
-        # 我们对两个损失使用相同的加权 MSE
         self.loss_fn = WeightedMSELoss()
 
     def forward(self, student_output, teacher_output, y_true):
-        """
-        计算总的蒸馏损失
-
-        Args:
-            student_output: 学生的预测, shape [B, 5]
-            teacher_output: 教师的预测, shape [B, 5]
-            y_true:         真实标签, shape [B, 5]
-        """
-        
         # 1. Hard Loss (学生 vs 真实标签)
         loss_hard = self.loss_fn(student_output, y_true)
         
