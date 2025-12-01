@@ -135,4 +135,7 @@ class TeacherModel(nn.Module):
         
         output = self.fusion_head(fused_features)
         
-        return output
+        # --- MODIFICATION ---
+        # Return both the final prediction AND the intermediate feature
+        return output, attended_img_features
+        # --- END MODIFICATION ---
