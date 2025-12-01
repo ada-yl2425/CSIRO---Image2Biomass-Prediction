@@ -101,4 +101,7 @@ class StudentModel(nn.Module):
         # 7. squeeze: [B, 5, 1] -> [B, 5]
         output = output.squeeze(-1)
 
-        return output
+        # --- MODIFICATION ---
+        # Return both the final prediction AND the intermediate feature
+        return output, attn_output
+        # --- END MODIFICATION ---
