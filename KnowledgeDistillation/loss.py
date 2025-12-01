@@ -4,12 +4,9 @@ import torch
 import torch.nn as nn
 
 class WeightedMSELoss(nn.Module):
-    """
-    [log_Dry_Green_g, log_Dry_Dead_g, log_Dry_Clover_g, log_GDM_g, log_Dry_Total_g]
-    """
+
     def __init__(self):
         super(WeightedMSELoss, self).__init__()
-        # weighted: [0.1, 0.1, 0.1, 0.2, 0.5]
         self.weights = torch.tensor([0.1, 0.1, 0.1, 0.2, 0.5], dtype=torch.float32)
 
     def forward(self, y_pred, y_true):
@@ -43,21 +40,18 @@ def calculate_weighted_r2(y_true, y_pred, device):
 
 class StudentLoss(nn.Module):
     def __init__(self, alpha=0.1):
-
-        super().__init__() 
-        
+        super().__init__()
         self.alpha = alpha
-        
         self.loss_fn = WeightedMSELoss()
 
     def forward(self, student_output, teacher_output, y_true):
-        # 1. Hard Loss (学生 vs 真实标签)
+        # 1. Hard Loss (stu vs real)
         loss_hard = self.loss_fn(student_output, y_true)
         
-        # 2. Soft Loss (学生 vs 教师)
+        # 2. Soft Loss (stu vs teacher)
         loss_soft = self.loss_fn(student_output, teacher_output)
         
-        # 3. 结合
+        # 3. add
         total_loss = (self.alpha * loss_hard) + ((1 - self.alpha) * loss_soft)
         
         return total_loss
