@@ -39,19 +39,25 @@ def calculate_weighted_r2(y_true, y_pred, device):
 
 
 class StudentLoss(nn.Module):
-    def __init__(self, alpha=0.1):
+    def __init__(self, alpha=0.5, beta=0.2, gamma=0.3):
         super().__init__()
         self.alpha = alpha
+        self.beta = beta
+        self.gamma = gamma
         self.loss_fn = WeightedMSELoss()
+        self.loss_soft_fn = nn.MSELoss()
+        self.loss_feat_fn = nn.MSELoss()
 
-    def forward(self, student_output, teacher_output, y_true):
-        # 1. Hard Loss (stu vs real)
+    def forward(self, student_output, teacher_output, 
+                student_features, teacher_features_expanded, y_true):
+        # Loss 1: Hard Loss (学生 vs 真实标签)
         loss_hard = self.loss_fn(student_output, y_true)
+        # Loss 2: Soft Loss (学生 vs 教师预测)
+        loss_soft = self.loss_soft_fn(student_output, teacher_output)
+        # Loss 3: Feature Loss (学生特征 vs 教师特征)
+        loss_feat = self.loss_feat_fn(student_features, teacher_features_expanded)
+
+        # 5. 组合总损失
+        loss = (self.alpha * loss_hard) + (self.beta * loss_soft) + (self.gamma * loss_feat)
         
-        # 2. Soft Loss (stu vs teacher)
-        loss_soft = self.loss_fn(student_output, teacher_output)
-        
-        # 3. add
-        total_loss = (self.alpha * loss_hard) + ((1 - self.alpha) * loss_soft)
-        
-        return total_loss
+        return loss
