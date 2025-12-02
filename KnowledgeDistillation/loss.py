@@ -49,13 +49,13 @@ class StudentLoss(nn.Module):
         self.loss_feat_fn = nn.CosineEmbeddingLoss()
 
     def forward(self, student_output, teacher_output, 
-                student_features, teacher_features_expanded, y_true):
+                student_features, teacher_features_expanded, target_tensor, y_true):
         # Loss 1: Hard Loss (学生 vs 真实标签)
         loss_hard = self.loss_fn(student_output, y_true)
         # Loss 2: Soft Loss (学生 vs 教师预测)
         loss_soft = self.loss_soft_fn(student_output, teacher_output)
         # Loss 3: Feature Loss (学生特征 vs 教师特征)
-        loss_feat = self.loss_feat_fn(student_features, teacher_features_expanded)
+        loss_feat = self.loss_feat_fn(student_features, teacher_features_expanded, target_tensor)
 
         # 5. 组合总损失
         loss = (self.alpha * loss_hard) + (self.beta * loss_soft) + (self.gamma * loss_feat)
