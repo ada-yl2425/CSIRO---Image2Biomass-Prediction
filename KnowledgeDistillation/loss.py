@@ -45,8 +45,8 @@ class StudentLoss(nn.Module):
         self.beta = beta
         self.gamma = gamma
         self.loss_fn = WeightedMSELoss()
-        self.loss_soft_fn = nn.MSELoss()
-        self.loss_feat_fn = nn.MSELoss()
+        self.loss_soft_fn = WeightedMSELoss()
+        self.loss_feat_fn = nn.CosineEmbeddingLoss()
 
     def forward(self, student_output, teacher_output, 
                 student_features, teacher_features_expanded, y_true):
