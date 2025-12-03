@@ -37,10 +37,6 @@ class TeacherModel(nn.Module):
     def __init__(self, num_states, num_species, img_model_name='resnext50_32x4d'):
         super(TeacherModel, self).__init__()
         
-        self.img_model_dim = 2048  # characteristics dims of ResNeXt-50
-        self.tab_model_dim = 256   # output dims of tabel branch
-        self.num_heads = 8         # head of cross attention
-
         # 1. Image Branch
         self.img_backbone = timm.create_model(
             img_model_name,
@@ -48,7 +44,11 @@ class TeacherModel(nn.Module):
             num_classes=0,
             global_pool=''  # don't use GAP!!!
         )
-
+        
+        self.img_model_features = self.img_backbone.num_features  # 2048  
+        self.tab_model_dim = 256   # output dims of tabel branch
+        self.num_heads = 8         # head of cross attention
+        
         self.img_kv_projector = nn.Linear(self.img_model_dim, self.tab_model_dim)
         
         # 2. Table Branch
