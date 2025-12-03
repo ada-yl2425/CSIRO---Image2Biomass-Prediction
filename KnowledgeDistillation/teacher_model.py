@@ -176,19 +176,6 @@ class TeacherModel(nn.Module):
 
         self.fusion_input_dim = self.tab_model_dim + self.tab_model_dim # 512
         
-        self.fusion_head = nn.Sequential(
-            nn.Linear(self.fusion_input_dim, 1024),
-            nn.ReLU(),
-            nn.BatchNorm1d(1024),
-            nn.Dropout(0.3), 
-            nn.Linear(1024, 512), 
-            nn.ReLU(),
-            nn.BatchNorm1d(512),
-            nn.Dropout(0.3), 
-            nn.Linear(512, 256),
-            nn.ReLU(),
-            nn.Linear(256, 5)
-        )
         output = self.fusion_head(fused_features)
         
         # --- MODIFICATION ---
