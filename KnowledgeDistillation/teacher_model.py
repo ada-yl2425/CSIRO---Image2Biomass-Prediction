@@ -105,21 +105,16 @@ class TeacherModel(nn.Module):
         )
 
         # Selective Fine-tuning
-        # 1. freeze all
+        # 1. Freeze all parameters initially
         for param in self.img_backbone.parameters():
             param.requires_grad = False
-            
-        # 2. unfreeze last 3 bloacks
-        for param in self.img_backbone.blocks[-3:].parameters(): 
+
+        # 2. Unfreeze the last few blocks (layer4 and layer3)
+        for param in self.img_backbone.layer4.parameters():
+            param.requires_grad = True
+        for param in self.img_backbone.layer3.parameters():
             param.requires_grad = True
 
-        # 3. unfreeze conv_head and bn2 (final heads)
-        if hasattr(self.img_backbone, 'conv_head'):
-             for param in self.img_backbone.conv_head.parameters():
-                  param.requires_grad = True
-        if hasattr(self.img_backbone, 'bn2'):
-             for param in self.img_backbone.bn2.parameters():
-                  param.requires_grad = True
 
     def forward(self, image, numeric_data, categorical_data):
         
