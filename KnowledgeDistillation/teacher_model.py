@@ -76,7 +76,6 @@ class TeacherModel(nn.Module):
             num_heads=self.num_heads, # 8
             batch_first=True
         )
-        self.tab_attn_norm = nn.LayerNorm(self.tab_model_dim)
 
         # 3. Cross-Attention
         
