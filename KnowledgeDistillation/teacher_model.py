@@ -50,8 +50,16 @@ class TeacherModel(nn.Module):
         # 3. Table Branch Components (Query source)
         self.tabular_embedder = self._init_tabular_embedder(num_states, num_species)
         self.tabular_processor = self._init_tabular_processor()
+        
+        # 添加缺失的 tab_self_attn
+        self.tab_self_attn = nn.MultiheadAttention(
+            embed_dim=self.tab_model_dim,
+            num_heads=self.num_heads,
+            batch_first=True
+        )
+        
         self.tab_q_projector = nn.Linear(self.tab_model_dim, self.tab_model_dim)
-        self.tab_attn_norm = nn.LayerNorm(self.tab_model_dim) # From forward pass
+        self.tab_attn_norm = nn.LayerNorm(self.tab_model_dim)  # From forward pass
 
         # 4. Fusion Component (Cross-Attention)
         self.cross_attention_blocks = nn.ModuleList([
@@ -80,17 +88,18 @@ class TeacherModel(nn.Module):
         self.num_numeric_features = 4
         self.state_embed_dim = 8
         self.species_embed_dim = 16
-        tab_input_dim = (
+        # 将 tab_input_dim 存储为实例属性，而不是放在 ModuleDict 中
+        self.tab_input_dim = (
             self.num_numeric_features + self.state_embed_dim + self.species_embed_dim
         )
         return nn.ModuleDict({
             'state_embedding': nn.Embedding(num_states, self.state_embed_dim),
             'species_embedding': nn.Embedding(num_species, self.species_embed_dim),
-            'tab_input_dim': tab_input_dim # Store for processor
         })
 
     def _init_tabular_processor(self):
-        input_dim = self.tabular_embedder['tab_input_dim']
+        # 使用实例属性 self.tab_input_dim
+        input_dim = self.tab_input_dim
         return nn.Sequential(
             # MLP
             nn.Linear(input_dim, 512), 
@@ -102,7 +111,7 @@ class TeacherModel(nn.Module):
         )
 
     def _init_fusion_head(self):
-        fusion_input_dim = self.tab_model_dim * 2 # 256 + 256 = 512
+        fusion_input_dim = self.tab_model_dim * 2  # 256 + 256 = 512
         return nn.Sequential(
             nn.Linear(fusion_input_dim, 512),
             nn.ReLU(),
@@ -141,10 +150,10 @@ class TeacherModel(nn.Module):
         tab_data = torch.cat([numeric_data, state_emb, species_emb], dim=1)
         
         # 1.2 MLP Processing
-        tab_features = self.tabular_processor(tab_data) # [B, 256]
+        tab_features = self.tabular_processor(tab_data)  # [B, 256]
         
         # 1.3 Self-Attention Enhancement
-        tab_features_sa = tab_features.unsqueeze(1) # [B, 1, 256]
+        tab_features_sa = tab_features.unsqueeze(1)  # [B, 1, 256]
         tab_sa_output, _ = self.tab_self_attn(
             query=tab_features_sa, 
             key=tab_features_sa, 
@@ -154,14 +163,14 @@ class TeacherModel(nn.Module):
         tab_features = self.tab_attn_norm(tab_features)
         
         # 1.4 Project to Query
-        query = self.tab_q_projector(tab_features).unsqueeze(1) # [B, 1, 256]
+        query = self.tab_q_projector(tab_features).unsqueeze(1)  # [B, 1, 256]
 
         # 2. Image Feature Extraction (Key/Value Source)
-        x_map = self.img_backbone(image) # [B, C, H, W]
-        x_patches = x_map.flatten(2).permute(0, 2, 1) # [B, P, C]
+        x_map = self.img_backbone(image)  # [B, C, H, W]
+        x_patches = x_map.flatten(2).permute(0, 2, 1)  # [B, P, C]
         
         # Project to K/V
-        key_value = self.img_kv_projector(x_patches) # [B, P, 256]
+        key_value = self.img_kv_projector(x_patches)  # [B, P, 256]
         
         # 3. Cross Attention Fusion
         attn_output = query
@@ -173,10 +182,10 @@ class TeacherModel(nn.Module):
             )
         
         # Attended Image Feature (aligned with tabular data)
-        attended_img_features = attn_output.squeeze(1) # [B, 256]
+        attended_img_features = attn_output.squeeze(1)  # [B, 256]
 
         # 4. Final Fusion and Prediction
-        fused_features = torch.cat([tab_features, attended_img_features], dim=1) # [B, 512]
-        output = self.fusion_head(fused_features) # [B, 5]
+        fused_features = torch.cat([tab_features, attended_img_features], dim=1)  # [B, 512]
+        output = self.fusion_head(fused_features)  # [B, 5]
         
         return output, attended_img_features
