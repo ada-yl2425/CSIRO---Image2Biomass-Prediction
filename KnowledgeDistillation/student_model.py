@@ -7,7 +7,7 @@ import timm
 
 class StudentModel(nn.Module):
 
-    def __init__(self, img_model_name='efficientnet_b2'):
+    def __init__(self, img_model_name='mobilenetv2_100'):
         super(StudentModel, self).__init__()
 
         # 1. Image Backbone
@@ -19,7 +19,7 @@ class StudentModel(nn.Module):
         )
 
         self.num_img_features = self.img_backbone.num_features # 1408
-        self.embed_dim = 256 # embedding dims
+        self.embed_dim = 1280 # embedding dims
         self.num_heads = 8   # attention head
         self.num_targets = 5 # 5 targets
 
@@ -36,7 +36,7 @@ class StudentModel(nn.Module):
             d_model=self.embed_dim,         # 256
             nhead=self.num_heads,           # 8
             dim_feedforward=self.embed_dim * 4, # 1024 (MLP  extension)
-            dropout=0.1,                    
+            dropout=0.3,                    
             batch_first=True
         )
         self.transformer_decoder = nn.TransformerDecoder(
@@ -71,10 +71,10 @@ class StudentModel(nn.Module):
     def forward(self, image):
         B = image.shape[0]
 
-        # 1. get feature map: [B, 1408, 8, 8]
+        # 1. get feature map: [B, 1280, 8, 8]
         x_map = self.img_backbone(image)
 
-        # 2. flat: [B, 64, 1408]
+        # 2. flat: [B, 64, 1280]
         patches = x_map.flatten(2).permute(0, 2, 1) 
         
         # 3. projector (get Key/Value)
