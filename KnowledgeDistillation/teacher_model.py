@@ -7,6 +7,7 @@ import timm
 
 
 class CrossAttentionBlock(nn.Module):
+
     def __init__(self, embed_dim, num_heads):
         super().__init__()
         self.cross_attn = nn.MultiheadAttention(
@@ -18,8 +19,7 @@ class CrossAttentionBlock(nn.Module):
 
     def forward(self, query, key, value):
         # query shape: [B, 1, D]
-        # key/value shape: [B, P, D]
-        
+        # key/value shape: [B, P, D]        
         # attention output shape: [B, 1, D]
         attn_output, _ = self.cross_attn(
             query=query, 
@@ -50,14 +50,11 @@ class TeacherModel(nn.Module):
         # 3. Table Branch Components (Query source)
         self.tabular_embedder = self._init_tabular_embedder(num_states, num_species)
         self.tabular_processor = self._init_tabular_processor()
-        
-        # 添加缺失的 tab_self_attn
         self.tab_self_attn = nn.MultiheadAttention(
             embed_dim=self.tab_model_dim,
             num_heads=self.num_heads,
             batch_first=True
         )
-        
         self.tab_q_projector = nn.Linear(self.tab_model_dim, self.tab_model_dim)
         self.tab_attn_norm = nn.LayerNorm(self.tab_model_dim)  # From forward pass
 
@@ -88,7 +85,6 @@ class TeacherModel(nn.Module):
         self.num_numeric_features = 4
         self.state_embed_dim = 8
         self.species_embed_dim = 16
-        # 将 tab_input_dim 存储为实例属性，而不是放在 ModuleDict 中
         self.tab_input_dim = (
             self.num_numeric_features + self.state_embed_dim + self.species_embed_dim
         )
@@ -98,7 +94,6 @@ class TeacherModel(nn.Module):
         })
 
     def _init_tabular_processor(self):
-        # 使用实例属性 self.tab_input_dim
         input_dim = self.tab_input_dim
         return nn.Sequential(
             # MLP
@@ -107,7 +102,6 @@ class TeacherModel(nn.Module):
             nn.BatchNorm1d(512),
             nn.Dropout(0.3), 
             nn.Linear(512, self.tab_model_dim),
-            # Self-Attention is applied in forward pass
         )
 
     def _init_fusion_head(self):
