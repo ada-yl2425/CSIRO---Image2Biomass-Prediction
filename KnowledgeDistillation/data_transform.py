@@ -1,3 +1,4 @@
+from torchvision import transforms
 from torchvision.transforms import TrivialAugmentWide
 
 def transForms(args, num_bins, mean, std, p, type):
